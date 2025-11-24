@@ -449,25 +449,52 @@
         }
 
         function logCount(id) { state.currentFishId = id; document.getElementById('additionalCount').value = 1; openModal('countModal'); }
+        
         function saveCount() {
             const fish = state.fishLog.find(f => f.id === state.currentFishId);
             const add = parseInt(document.getElementById('additionalCount').value);
-            if (add < 1) { notify('Count must be >= 1', 'error'); return; }
+        
+            if (add < 1) {
+                notify('Count must be >= 1', 'error');
+                return;
+            }
+        
             fish.count += add;
-            const newMax = fish.count > fish.maxN;
-            if (newMax) fish.maxN = fish.count;
-            const evt = { timestamp: video.currentTime, frame: Math.floor(video.currentTime*30), species: fish.species, type: 're_sighting', countAdded: add, cumulative: fish.count, maxN: fish.maxN, bite: '', screenshot: '', notes: '' };
-            state.events.push(evt); fish.events.push(evt);
-            renderFish(); closeModal('countModal');
+        
+            // FIX: maxN should track the largest single observation (add), not cumulative
+            const newMax = add > fish.maxN;
+            if (newMax) fish.maxN = add;
+        
+            const evt = {
+                timestamp: video.currentTime,
+                frame: Math.floor(video.currentTime * 30),
+                species: fish.species,
+                type: 're_sighting',
+                countAdded: add,
+                cumulative: fish.count,
+                maxN: fish.maxN,
+                bite: '',
+                screenshot: '',
+                notes: ''
+            };
+        
+            state.events.push(evt);
+            fish.events.push(evt);
+        
+            renderFish();
+            closeModal('countModal');
             notify(`Added ${add} ${fish.species}!`);
+        
             if (newMax) {
                 document.getElementById('maxnSpeciesName').textContent = fish.species;
                 document.getElementById('maxnValue').textContent = fish.maxN;
                 openModal('maxnModal');
-            } else if (document.getElementById('autoAdvance').checked) video.currentTime += 1/30;
+            } else if (document.getElementById('autoAdvance').checked) {
+                video.currentTime += 1 / 30;
+            }
+        
             saveSession();
         }
-
         function captureMaxN() {
             const fish = state.fishLog.find(f => f.id === state.currentFishId);
             const lastEvt = fish.events[fish.events.length - 1];

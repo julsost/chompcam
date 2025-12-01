@@ -1,12 +1,3 @@
-
-
-
-
-
-
-
-
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -48,14 +39,20 @@
         .side-panel-header h2 { font-size: 18px; margin-bottom: 15px; }
         .new-fish-section { padding: 15px; background: #f8f9fa; border-bottom: 2px solid #e1e8ed; }
         .species-search { width: 100%; padding: 10px; border: 2px solid #e1e8ed; border-radius: 6px; margin-bottom: 10px; font-size: 14px; }
-        .species-slideshow { max-height: 200px; overflow-y: auto; border: 2px solid #e1e8ed; border-radius: 6px; background: white; margin-bottom: 10px; }
-        .species-item { padding: 10px; cursor: pointer; border-bottom: 1px solid #e1e8ed; transition: background 0.2s; }
+        .species-slideshow { max-height: 300px; overflow-y: auto; border: 2px solid #e1e8ed; border-radius: 6px; background: white; margin-bottom: 10px; }
+        .species-item { padding: 10px; cursor: pointer; border-bottom: 1px solid #e1e8ed; transition: background 0.2s; display: flex; align-items: center; gap: 10px; }
         .species-item:hover { background: #f0f8ff; }
         .species-item.selected { background: #e3f2fd; font-weight: 600; }
+        .species-img { width: 50px; height: 50px; object-fit: cover; border-radius: 4px; background: #e1e8ed; flex-shrink: 0; border: 1px solid #ccc; }
+        .species-img-placeholder { width: 50px; height: 50px; border-radius: 4px; background: #e1e8ed; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #999; font-size: 20px; }
+        .species-info { flex: 1; min-width: 0; }
         .fish-list { flex: 1; overflow-y: auto; padding: 15px; }
         .fish-card { background: white; border: 2px solid #e1e8ed; border-radius: 8px; padding: 15px; margin-bottom: 15px; }
         .fish-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
         .fish-name { font-weight: 600; font-size: 16px; color: #1a5490; }
+        .fish-thumbnail { width: 60px; height: 60px; object-fit: cover; border-radius: 6px; border: 2px solid #e1e8ed; margin-bottom: 10px; }
+        .fish-card-top { display: flex; gap: 12px; align-items: flex-start; }
+        .fish-card-details { flex: 1; }
         .fish-stats { display: flex; gap: 15px; margin-bottom: 10px; font-size: 14px; }
         .stat { display: flex; flex-direction: column; }
         .stat-label { font-size: 11px; color: #7f8c8d; text-transform: uppercase; }
@@ -162,9 +159,9 @@
             <label>Manual Entry</label>
             <input type="text" id="manualSpeciesName" placeholder="Type fish name">
             <button id="selectUnknown" class="secondary" style="width:100%;margin:15px 0">❓ Unknown Species</button>
-            <div class="checkbox-group" style="margin-bottom:15px">
-                <input type="checkbox" id="takeScreenshotOnAdd" checked>
-                <label style="text-transform:none;margin:0">Take screenshot</label>
+            <div class="form-group" style="margin-bottom:15px">
+                <label>How many fish? (This will be the initial MaxN)</label>
+                <input type="number" id="initialFishCount" value="1" min="1" style="width:100%">
             </div>
             <button id="addFishBtn" class="success" style="width:100%">✅ Add Fish</button>
         </div>
@@ -172,8 +169,13 @@
     <div class="modal" id="biteModal">
         <div class="modal-content">
             <div class="modal-header"><h3>Log Bite</h3><button class="close-modal" onclick="closeModal('biteModal')">&times;</button></div>
-            <label>What did the fish bite?</label>
-            <input type="text" id="biteTarget" placeholder="e.g., turf algae, macroalgae">
+            <label>What substrate did the fish bite?</label>
+            <select id="biteTarget" style="width:100%;margin-top:5px">
+                <option value="">-- Select substrate --</option>
+                <option value="Algae">Algae</option>
+                <option value="Coral">Coral</option>
+                <option value="Sand">Sand</option>
+            </select>
             <button id="saveBiteBtn" class="success" style="width:100%;margin-top:15px">✅ Save</button>
         </div>
     </div>
@@ -194,65 +196,75 @@
             <button onclick="closeModal('maxnModal')" class="secondary" style="width:100%">Skip</button>
         </div>
     </div>
+    <div class="modal" id="firstSightingModal">
+        <div class="modal-content">
+            <div class="modal-header"><h3>📸 Capture Fish Photo</h3><button class="close-modal" onclick="skipFirstSightingPhoto()">&times;</button></div>
+            <p style="margin-bottom:15px">Take a cropped screenshot of <strong id="firstSightingSpecies"></strong> for identification.</p>
+            <p style="margin-bottom:20px;color:#7f8c8d;font-size:13px">Click and drag on the video to crop around the fish.</p>
+            <button id="startFirstSightingCrop" class="success" style="width:100%;margin-bottom:10px">✂️ Crop Screenshot</button>
+            <button id="takeFullFirstSighting" class="secondary" style="width:100%;margin-bottom:10px">📸 Full Screenshot</button>
+            <button onclick="skipFirstSightingPhoto()" class="secondary" style="width:100%">Skip</button>
+        </div>
+    </div>
     <div class="notification" id="notification"></div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script>
         // State
-        const state = { fishLog: [], screenshots: [], events: [], currentFishId: null, selectedSpecies: null, cropMode: false, cropStart: null };
+        const state = { fishLog: [], screenshots: [], events: [], currentFishId: null, selectedSpecies: null, cropMode: false, cropStart: null, pendingFish: null, firstSightingCropMode: false };
         
-        // Species Data
+        // Species Data - images are in fish_species/ folder, named like bengal_sergeant.png
         const speciesData = [
-            { name: "Bengal sergeant", scientific: "Abudefduf bengalensis" },
-            { name: "Scissortail sergeant", scientific: "Abudefduf sexfasciatus" },
-            { name: "Whitley's Sergeant", scientific: "Abudefduf whitleyi" },
-            { name: "Sand Whiting", scientific: "Sillago Ciliata" },
-            { name: "Trumpeter whiting", scientific: "Sillago maculata" },
-            { name: "Paradise Threadfin Bream", scientific: "" },
-            { name: "Yellowfin Bream", scientific: "Acanthopagrus australis" },
-            { name: "Grass emperor", scientific: "Lethrinus laticaudis" },
-            { name: "Threadfin emperor", scientific: "Lethrinus genivittatus" },
-            { name: "Lined fangblenny", scientific: "" },
-            { name: "Yellow sabretooth blenny", scientific: "" },
-            { name: "Bluestriped fangblenny", scientific: "" },
-            { name: "Sea Garfish", scientific: "Hyporhamphus quoyi" },
-            { name: "Silver Batfish", scientific: "Monodactylus argenteus" },
-            { name: "Black rabbitfish", scientific: "Siganus fuscescens" },
-            { name: "Golden Trevally", scientific: "Gnathanodon speciosus" },
-            { name: "Bigeye trevally", scientific: "Caranx sexfasciatus" },
-            { name: "Giant trevally", scientific: "" },
-            { name: "Blacktip silverbiddy", scientific: "Gerres oyena" },
-            { name: "Common silverbiddy", scientific: "Gerres subfasciatus" },
-            { name: "Gunther's Wrasse", scientific: "Pseudolabrus guentheri" },
-            { name: "Moon wrasse", scientific: "Thalassoma lunare" },
-            { name: "Rainbow wrasse", scientific: "" },
-            { name: "Bluebarred Parrotfish", scientific: "Scarrus ghoban" },
-            { name: "Port Jackson Glassfish", scientific: "Ambassis jacksoniensis" },
-            { name: "Common cleanerfish", scientific: "Labroides dimidiatus" },
-            { name: "Chinese demoiselle", scientific: "Neopomaentrus bankieri" },
-            { name: "Neon damsel", scientific: "Pomacentrus coelestis" },
-            { name: "Yellowtail blue damsel", scientific: "" },
-            { name: "Australian damsel", scientific: "Pomacentrus australis" },
-            { name: "Golden damsel", scientific: "Amblyglyphidodon aureus" },
-            { name: "Lemon damsel", scientific: "Pomacentrus moluccensis" },
-            { name: "Whiteband damsel", scientific: "Plectroglyphidodon leucozonus" },
-            { name: "Yellowtail angelfish", scientific: "Chaetodontoplus meredithi" },
-            { name: "Dusky Butterflyfish", scientific: "Chaetodon flavirostris" },
-            { name: "Moses' snapper", scientific: "Lutjanus russellii" },
-            { name: "Blackspot snapper", scientific: "Lutjanus fulviflamma" },
-            { name: "Stripey", scientific: "Microcanthus strigatus" },
-            { name: "East-Australian Stripey", scientific: "Microcanthus joyceae" },
-            { name: "Sydney Cardinalfish", scientific: "Ostorhinchus limenus" },
-            { name: "Whiteline Cardinalfish", scientific: "Ostorhinchus cavitensis" },
-            { name: "Cook's cardinalfish", scientific: "Ostorhinchus cookii" },
-            { name: "Keyhole angelfish", scientific: "Centropyge tibicen" },
-            { name: "Pencil surgeonfish", scientific: "Acanthurus dussumieri" },
-            { name: "Crested moorwong", scientific: "Goniistius vestitus" },
-            { name: "Blacksaddle goatfish", scientific: "" },
-            { name: "Striped barracuda", scientific: "" },
-            { name: "Eastern Striped Grunter", scientific: "Pelates sexlineatus" },
-            { name: "Beaked coralfish", scientific: "Chelmon rostratus" },
-            { name: "Common hardyhead", scientific: "Atherinomorus vaigiensis" },
-            { name: "Barred yellowtail scad", scientific: "Atule mate" }
+            { name: "Bengal sergeant", scientific: "Abudefduf bengalensis", image: "bengal_sergeant.png" },
+            { name: "Scissortail sergeant", scientific: "Abudefduf sexfasciatus", image: "scissortail_sergeant.png" },
+            { name: "Whitley's Sergeant", scientific: "Abudefduf whitleyi", image: "whitleys_sergeant.png" },
+            { name: "Sand Whiting", scientific: "Sillago Ciliata", image: "sand_whiting.png" },
+            { name: "Trumpeter whiting", scientific: "Sillago maculata", image: "trumpeter_whiting.png" },
+            { name: "Paradise Threadfin Bream", scientific: "", image: "paradise_threadfin_bream.png" },
+            { name: "Yellowfin Bream", scientific: "Acanthopagrus australis", image: "yellowfin_bream.png" },
+            { name: "Grass emperor", scientific: "Lethrinus laticaudis", image: "grass_emperor.png" },
+            { name: "Threadfin emperor", scientific: "Lethrinus genivittatus", image: "threadfin_emperor.png" },
+            { name: "Lined fangblenny", scientific: "", image: "lined_fangblenny.png" },
+            { name: "Yellow sabretooth blenny", scientific: "", image: "yellow_sabretooth_blenny.png" },
+            { name: "Bluestriped fangblenny", scientific: "", image: "bluestriped_fangblenny.png" },
+            { name: "Sea Garfish", scientific: "Hyporhamphus quoyi", image: "sea_garfish.png" },
+            { name: "Silver Batfish", scientific: "Monodactylus argenteus", image: "silver_batfish.png" },
+            { name: "Black rabbitfish", scientific: "Siganus fuscescens", image: "black_rabbitfish.png" },
+            { name: "Golden Trevally", scientific: "Gnathanodon speciosus", image: "golden_trevally.png" },
+            { name: "Bigeye trevally", scientific: "Caranx sexfasciatus", image: "bigeye_trevally.png" },
+            { name: "Giant trevally", scientific: "", image: "giant_trevally.png" },
+            { name: "Blacktip silverbiddy", scientific: "Gerres oyena", image: "blacktip_silverbiddy.png" },
+            { name: "Common silverbiddy", scientific: "Gerres subfasciatus", image: "common_silverbiddy.png" },
+            { name: "Gunther's Wrasse", scientific: "Pseudolabrus guentheri", image: "gunthers_wrasse.png" },
+            { name: "Moon wrasse", scientific: "Thalassoma lunare", image: "moon_wrasse.png" },
+            { name: "Rainbow wrasse", scientific: "", image: "rainbow_wrasse.png" },
+            { name: "Bluebarred Parrotfish", scientific: "Scarrus ghoban", image: "bluebarred_parrotfish.png" },
+            { name: "Port Jackson Glassfish", scientific: "Ambassis jacksoniensis", image: "port_jackson_glassfish.png" },
+            { name: "Common cleanerfish", scientific: "Labroides dimidiatus", image: "common_cleanerfish.png" },
+            { name: "Chinese demoiselle", scientific: "Neopomaentrus bankieri", image: "chinese_demoiselle.png" },
+            { name: "Neon damsel", scientific: "Pomacentrus coelestis", image: "neon_damsel.png" },
+            { name: "Yellowtail blue damsel", scientific: "", image: "yellowtail_blue_damsel.png" },
+            { name: "Australian damsel", scientific: "Pomacentrus australis", image: "australian_damsel.png" },
+            { name: "Golden damsel", scientific: "Amblyglyphidodon aureus", image: "golden_damsel.png" },
+            { name: "Lemon damsel", scientific: "Pomacentrus moluccensis", image: "lemon_damsel.png" },
+            { name: "Whiteband damsel", scientific: "Plectroglyphidodon leucozonus", image: "whiteband_damsel.png" },
+            { name: "Yellowtail angelfish", scientific: "Chaetodontoplus meredithi", image: "yellowtail_angelfish.png" },
+            { name: "Dusky Butterflyfish", scientific: "Chaetodon flavirostris", image: "dusky_butterflyfish.png" },
+            { name: "Moses' snapper", scientific: "Lutjanus russellii", image: "moses_snapper.png" },
+            { name: "Blackspot snapper", scientific: "Lutjanus fulviflamma", image: "blackspot_snapper.png" },
+            { name: "Stripey", scientific: "Microcanthus strigatus", image: "stripey.png" },
+            { name: "East-Australian Stripey", scientific: "Microcanthus joyceae", image: "east_australian_stripey.png" },
+            { name: "Sydney Cardinalfish", scientific: "Ostorhinchus limenus", image: "sydney_cardinalfish.png" },
+            { name: "Whiteline Cardinalfish", scientific: "Ostorhinchus cavitensis", image: "whiteline_cardinalfish.png" },
+            { name: "Cook's cardinalfish", scientific: "Ostorhinchus cookii", image: "cooks_cardinalfish.png" },
+            { name: "Keyhole angelfish", scientific: "Centropyge tibicen", image: "keyhole_angelfish.png" },
+            { name: "Pencil surgeonfish", scientific: "Acanthurus dussumieri", image: "pencil_surgeonfish.png" },
+            { name: "Crested moorwong", scientific: "Goniistius vestitus", image: "crested_moorwong.png" },
+            { name: "Blacksaddle goatfish", scientific: "", image: "blacksaddle_goatfish.png" },
+            { name: "Striped barracuda", scientific: "", image: "striped_barracuda.png" },
+            { name: "Eastern Striped Grunter", scientific: "Pelates sexlineatus", image: "eastern_striped_grunter.png" },
+            { name: "Beaked coralfish", scientific: "Chelmon rostratus", image: "beaked_coralfish.png" },
+            { name: "Common hardyhead", scientific: "Atherinomorus vaigiensis", image: "common_hardyhead.png" },
+            { name: "Barred yellowtail scad", scientific: "Atule mate", image: "barred_yellowtail_scad.png" }
         ];
 
         // Elements
@@ -304,8 +316,11 @@
             document.getElementById('newFishBtn').onclick = () => openModal('newFishModal');
             document.getElementById('speciesSearch').oninput = filterSpecies;
             document.getElementById('selectUnknown').onclick = () => {
-                state.selectedSpecies = { name: 'Unknown', scientific: '' };
-                document.getElementById('manualSpeciesName').value = 'Unknown';
+                document.getElementById('manualSpeciesName').value = '';
+                document.getElementById('manualSpeciesName').placeholder = 'e.g., white fish with blue stripe';
+                document.getElementById('manualSpeciesName').focus();
+                state.selectedSpecies = null;
+                notify('Enter a description to identify this fish later', 'warning');
             };
             document.getElementById('addFishBtn').onclick = addFish;
             document.getElementById('saveBiteBtn').onclick = saveBite;
@@ -313,6 +328,8 @@
             document.getElementById('captureMaxnScreenshot').onclick = captureMaxN;
             document.getElementById('exportCSV').onclick = exportCSV;
             document.getElementById('exportZIP').onclick = exportZIP;
+            document.getElementById('startFirstSightingCrop').onclick = startFirstSightingCrop;
+            document.getElementById('takeFullFirstSighting').onclick = () => takeFirstSightingScreenshot(null);
             cropOverlay.onmousedown = e => { state.cropStart = { x: e.offsetX, y: e.offsetY }; };
             cropOverlay.onmousemove = e => {
                 if (!state.cropStart) return;
@@ -335,7 +352,14 @@
                     width: Math.abs(e.offsetX - state.cropStart.x) * scaleX,
                     height: Math.abs(e.offsetY - state.cropStart.y) * scaleY
                 };
-                takeScreenshot(crop);
+                
+                if (state.firstSightingCropMode) {
+                    takeFirstSightingScreenshot(crop);
+                    state.firstSightingCropMode = false;
+                } else {
+                    takeScreenshot(crop);
+                }
+                
                 state.cropStart = null;
                 cropOverlay.style.display = 'none';
                 cropBox.style.display = 'none';
@@ -361,8 +385,16 @@
         }
 
         function startCrop() {
+            state.firstSightingCropMode = false;
             cropOverlay.style.display = 'block';
             notify('Click and drag to select area', 'warning');
+        }
+        
+        function startFirstSightingCrop() {
+            closeModal('firstSightingModal');
+            state.firstSightingCropMode = true;
+            cropOverlay.style.display = 'block';
+            notify('Click and drag to crop around the fish', 'warning');
         }
 
         function takeScreenshot(crop) {
@@ -384,7 +416,10 @@
 
         function populateSpecies() {
             const ss = document.getElementById('speciesSlideshow');
-            ss.innerHTML = speciesData.map((s,i) => `<div class="species-item" data-idx="${i}"><strong>${s.name}</strong><br><small style="color:#7f8c8d">${s.scientific}</small></div>`).join('');
+            ss.innerHTML = speciesData.map((s,i) => `<div class="species-item" data-idx="${i}">
+                <img class="species-img" src="fish_species/${s.image}" alt="${s.name}" onerror="this.outerHTML='<div class=\\'species-img-placeholder\\'>🐟</div>'">
+                <div class="species-info"><strong>${s.name}</strong><br><small style="color:#7f8c8d">${s.scientific || 'Unknown'}</small></div>
+            </div>`).join('');
             ss.querySelectorAll('.species-item').forEach(el => {
                 el.onclick = function() {
                     ss.querySelectorAll('.species-item').forEach(e => e.classList.remove('selected'));
@@ -405,21 +440,75 @@
             const manual = document.getElementById('manualSpeciesName').value.trim();
             const name = state.selectedSpecies?.name || manual;
             if (!name) { notify('Select or enter species', 'error'); return; }
-            const fish = { id: Date.now(), species: name, count: 1, maxN: 1, bites: 0, firstSeen: video.currentTime, events: [] };
-            state.fishLog.push(fish);
-            const evt = { timestamp: video.currentTime, frame: Math.floor(video.currentTime*30), species: name, type: 'first_sighting', countAdded: 1, cumulative: 1, maxN: 1, bite: '', screenshot: '', notes: '' };
-            if (document.getElementById('takeScreenshotOnAdd').checked) evt.screenshot = takeScreenshot();
-            state.events.push(evt);
-            fish.events.push(evt);
-            renderFish();
+            
+            const initialCount = parseInt(document.getElementById('initialFishCount').value) || 1;
+            if (initialCount < 1) { notify('Count must be at least 1', 'error'); return; }
+            
+            const fish = { id: Date.now(), species: name, count: initialCount, maxN: initialCount, bites: 0, firstSeen: video.currentTime, events: [], thumbnail: null };
+            const evt = { timestamp: video.currentTime, frame: Math.floor(video.currentTime*30), species: name, type: 'first_sighting', countAdded: initialCount, cumulative: initialCount, maxN: initialCount, bite: '', screenshot: '', notes: '' };
+            
+            // Store pending fish data
+            state.pendingFish = { fish, evt };
+            
+            // Close the new fish modal
             closeModal('newFishModal');
             state.selectedSpecies = null;
             document.getElementById('manualSpeciesName').value = '';
+            document.getElementById('manualSpeciesName').placeholder = 'Type fish name';
             document.getElementById('speciesSearch').value = '';
+            document.getElementById('initialFishCount').value = '1';
             document.querySelectorAll('.species-item').forEach(e => e.classList.remove('selected'));
-            notify(`Added ${name}!`);
+            
+            // Show first sighting screenshot modal
+            document.getElementById('firstSightingSpecies').textContent = name;
+            openModal('firstSightingModal');
+        }
+        
+        function completeAddFish(thumbnailData, screenshotFilename) {
+            const { fish, evt } = state.pendingFish;
+            
+            if (thumbnailData) {
+                fish.thumbnail = thumbnailData;
+            }
+            if (screenshotFilename) {
+                evt.screenshot = screenshotFilename;
+            }
+            
+            state.fishLog.push(fish);
+            state.events.push(evt);
+            fish.events.push(evt);
+            
+            state.pendingFish = null;
+            renderFish();
+            notify(`Added ${fish.species}!`);
             if (document.getElementById('autoAdvance').checked) video.currentTime += 1/30;
             saveSession();
+        }
+        
+        function skipFirstSightingPhoto() {
+            closeModal('firstSightingModal');
+            if (state.pendingFish) {
+                completeAddFish(null, null);
+            }
+        }
+        
+        function takeFirstSightingScreenshot(crop) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            if (crop) {
+                canvas.width = crop.width; canvas.height = crop.height;
+                ctx.drawImage(video, crop.x, crop.y, crop.width, crop.height, 0, 0, crop.width, crop.height);
+            } else {
+                canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+                ctx.drawImage(video, 0, 0);
+            }
+            const data = canvas.toDataURL('image/png');
+            const filename = `screenshot_${String(state.screenshots.length + 1).padStart(3,'0')}.png`;
+            state.screenshots.push({ filename, data, timestamp: video.currentTime });
+            
+            closeModal('firstSightingModal');
+            completeAddFish(data, filename);
+            notify('Fish photo captured!');
         }
 
         function renderFish() {
@@ -427,11 +516,16 @@
             if (!state.fishLog.length) { list.innerHTML = '<p style="text-align:center;color:#95a5a6;padding:20px">No fish logged yet</p>'; return; }
             list.innerHTML = state.fishLog.map(f => `
                 <div class="fish-card">
-                    <div class="fish-card-header"><span class="fish-name">${f.species}</span><span class="maxn-badge">MaxN: ${f.maxN}</span></div>
-                    <div class="fish-stats">
-                        <div class="stat"><span class="stat-label">Count</span><span class="stat-value">${f.count}</span></div>
-                        <div class="stat"><span class="stat-label">Bites</span><span class="stat-value">${f.bites}</span></div>
-                        <div class="stat"><span class="stat-label">First</span><span class="stat-value" style="font-size:14px">${formatTime(f.firstSeen)}</span></div>
+                    <div class="fish-card-top">
+                        ${f.thumbnail ? `<img class="fish-thumbnail" src="${f.thumbnail}" alt="${f.species}">` : ''}
+                        <div class="fish-card-details">
+                            <div class="fish-card-header"><span class="fish-name">${f.species}</span><span class="maxn-badge">MaxN: ${f.maxN}</span></div>
+                            <div class="fish-stats">
+                                <div class="stat"><span class="stat-label">Count</span><span class="stat-value">${f.count}</span></div>
+                                <div class="stat"><span class="stat-label">Bites</span><span class="stat-value">${f.bites}</span></div>
+                                <div class="stat"><span class="stat-label">First</span><span class="stat-value" style="font-size:14px">${formatTime(f.firstSeen)}</span></div>
+                            </div>
+                        </div>
                     </div>
                     <div class="fish-actions">
                         <button class="secondary" onclick="logBite(${f.id})">🦷 Bite</button>
@@ -445,14 +539,14 @@
         function logBite(id) { state.currentFishId = id; openModal('biteModal'); }
         function saveBite() {
             const fish = state.fishLog.find(f => f.id === state.currentFishId);
-            const target = document.getElementById('biteTarget').value.trim();
-            if (!target) { notify('Enter bite target', 'error'); return; }
+            const target = document.getElementById('biteTarget').value;
+            if (!target) { notify('Select a substrate type', 'error'); return; }
             fish.bites++;
             const evt = { timestamp: video.currentTime, frame: Math.floor(video.currentTime*30), species: fish.species, type: 'bite', countAdded: 0, cumulative: fish.count, maxN: fish.maxN, bite: target, screenshot: '', notes: '' };
             state.events.push(evt); fish.events.push(evt);
             renderFish(); closeModal('biteModal');
             document.getElementById('biteTarget').value = '';
-            notify(`Bite logged!`);
+            notify(`Bite logged: ${target}!`);
             if (document.getElementById('autoAdvance').checked) video.currentTime += 1/30;
             saveSession();
         }

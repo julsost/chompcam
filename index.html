@@ -40,11 +40,14 @@
         .new-fish-section { padding: 15px; background: #f8f9fa; border-bottom: 2px solid #e1e8ed; }
         .species-search { width: 100%; padding: 10px; border: 2px solid #e1e8ed; border-radius: 6px; margin-bottom: 10px; font-size: 14px; }
         .species-slideshow { max-height: 200px; overflow-y: auto; border: 2px solid #e1e8ed; border-radius: 6px; background: white; margin-bottom: 10px; }
-        .species-item { padding: 10px; cursor: pointer; border-bottom: 1px solid #e1e8ed; transition: background 0.2s; }
+        .species-item { padding: 10px; cursor: pointer; border-bottom: 1px solid #e1e8ed; transition: background 0.2s; display:flex; align-items:center; gap:8px }
+        .species-item img { width:48px; height:48px; object-fit:cover; border-radius:6px; border:1px solid #e1e8ed }
         .species-item:hover { background: #f0f8ff; }
         .species-item.selected { background: #e3f2fd; font-weight: 600; }
         .fish-list { flex: 1; overflow-y: auto; padding: 15px; }
-        .fish-card { background: white; border: 2px solid #e1e8ed; border-radius: 8px; padding: 15px; margin-bottom: 15px; }
+        .fish-card { background: white; border: 2px solid #e1e8ed; border-radius: 8px; padding: 15px; margin-bottom: 15px; display:flex; gap:12px; align-items:center }
+        .fish-card img { width:64px; height:64px; object-fit:cover; border-radius:6px; border:1px solid #e1e8ed }
+        .fish-info { flex:1 }
         .fish-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
         .fish-name { font-weight: 600; font-size: 16px; color: #1a5490; }
         .fish-stats { display: flex; gap: 15px; margin-bottom: 10px; font-size: 14px; }
@@ -143,6 +146,8 @@
             </div>
         </div>
     </div>
+    <input type="file" id="photoInput" accept="image/*" style="display:none">
+
     <div class="modal" id="newFishModal">
         <div class="modal-content">
             <div class="modal-header"><h3>Add New Fish</h3><button class="close-modal" onclick="closeModal('newFishModal')">&times;</button></div>
@@ -151,8 +156,18 @@
             <div class="species-slideshow" id="speciesSlideshow"></div>
             <div style="margin:15px 0;text-align:center;color:#95a5a6">— OR —</div>
             <label>Manual Entry</label>
-            <input type="text" id="manualSpeciesName" placeholder="Type fish name">
-            <button id="selectUnknown" class="secondary" style="width:100%;margin:15px 0">❓ Unknown Species</button>
+            <input type="text" id="manualSpeciesName" placeholder="Type fish name (e.g. Unknown: white with red dot)">
+            <div style="display:flex;gap:8px;margin-top:10px;margin-bottom:10px;">
+                <div style="flex:1">
+                    <label>How many do you see?</label>
+                    <input type="number" id="initialCount" value="1" min="1">
+                </div>
+                <div style="flex:1">
+                    <label style="visibility:hidden"> spacer</label>
+                    <button id="selectUnknown" class="secondary" style="width:100%;height:40px">❓ Unknown</button>
+                </div>
+            </div>
+            <div style="margin-top:8px;margin-bottom:8px;color:#7f8c8d;font-size:13px">If the species is unknown, click <strong>Unknown</strong> to auto-fill "Unknown: " and then give the best description you can (e.g., "Unknown: white with red dot").</div>
             <div class="checkbox-group" style="margin-bottom:15px">
                 <input type="checkbox" id="takeScreenshotOnAdd" checked>
                 <label style="text-transform:none;margin:0">Take screenshot</label>
@@ -164,7 +179,12 @@
         <div class="modal-content">
             <div class="modal-header"><h3>Log Bite</h3><button class="close-modal" onclick="closeModal('biteModal')">&times;</button></div>
             <label>What did the fish bite?</label>
-            <input type="text" id="biteTarget" placeholder="e.g., turf algae, macroalgae">
+            <select id="biteTarget">
+                <option value="algae">Algae</option>
+                <option value="sand">Sand</option>
+                <option value="soft coral">Soft coral</option>
+                <option value="hard coral">Hard coral</option>
+            </select>
             <button id="saveBiteBtn" class="success" style="width:100%;margin-top:15px">✅ Save</button>
         </div>
     </div>
@@ -189,7 +209,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script>
         // State
-        const state = { fishLog: [], screenshots: [], events: [], currentFishId: null, selectedSpecies: null, cropMode: false, cropStart: null };
+        const state = { fishLog: [], screenshots: [], events: [], currentFishId: null, selectedSpecies: null, cropMode: false, cropStart: null, assigningSpeciesPhoto: false, assignSpeciesFishId: null };
         
         // Species Data
         const speciesData = [
@@ -252,6 +272,7 @@
         const container = document.getElementById('videoContainer');
         const cropOverlay = document.getElementById('cropOverlay');
         const cropBox = document.getElementById('cropBox');
+        const photoInput = document.getElementById('photoInput');
 
         // Init
         document.addEventListener('DOMContentLoaded', () => {
@@ -295,8 +316,9 @@
             document.getElementById('newFishBtn').onclick = () => openModal('newFishModal');
             document.getElementById('speciesSearch').oninput = filterSpecies;
             document.getElementById('selectUnknown').onclick = () => {
-                state.selectedSpecies = { name: 'Unknown', scientific: '' };
-                document.getElementById('manualSpeciesName').value = 'Unknown';
+                document.getElementById('manualSpeciesName').value = 'Unknown: ';
+                document.getElementById('manualSpeciesName').focus();
+                notify('Please give the best description you can (e.g., "Unknown: white with red dot").', 'warning');
             };
             document.getElementById('addFishBtn').onclick = addFish;
             document.getElementById('saveBiteBtn').onclick = saveBite;
@@ -326,7 +348,23 @@
                     width: Math.abs(e.offsetX - state.cropStart.x) * scaleX,
                     height: Math.abs(e.offsetY - state.cropStart.y) * scaleY
                 };
-                takeScreenshot(crop);
+                // take screenshot and, if we're assigning species photo, attach it
+                const filename = takeScreenshot(crop);
+                if (state.assigningSpeciesPhoto && state.assignSpeciesFishId) {
+                    const last = state.screenshots[state.screenshots.length - 1];
+                    const fish = state.fishLog.find(f => f.id === state.assignSpeciesFishId);
+                    if (fish) {
+                        fish.photo = last.data;
+                        // update speciesData if present
+                        const sd = speciesData.find(s => s.name === fish.species);
+                        if (sd) sd.photo = last.data;
+                        notify('Species photo updated!');
+                        renderFish();
+                        saveSession();
+                    }
+                    state.assigningSpeciesPhoto = false;
+                    state.assignSpeciesFishId = null;
+                }
                 state.cropStart = null;
                 cropOverlay.style.display = 'none';
                 cropBox.style.display = 'none';
@@ -338,6 +376,42 @@
                 if (e.key === 'ArrowRight') { e.preventDefault(); video.currentTime += 1/30; }
                 if (e.key.toLowerCase() === 's') { e.preventDefault(); takeScreenshot(); }
             };
+
+            // keep photoInput handler in case user wants manual upload from species list later
+            photoInput.onchange = e => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = ev => {
+                    const data = ev.target.result;
+                    const filename = `photo_${Date.now()}.png`;
+                    // if assigningSpeciesPhoto, attach to species
+                    if (state.assigningSpeciesPhoto && state.assignSpeciesFishId) {
+                        const fish = state.fishLog.find(f => f.id === state.assignSpeciesFishId);
+                        if (fish) {
+                            fish.photo = data;
+                            const sd = speciesData.find(s => s.name === fish.species);
+                            if (sd) sd.photo = data;
+                            state.screenshots.push({ filename, data, timestamp: video.currentTime });
+                            renderFish(); notify('Species photo updated!'); saveSession();
+                        }
+                        state.assigningSpeciesPhoto = false;
+                        state.assignSpeciesFishId = null;
+                    } else {
+                        // otherwise, attach to current fish if exists
+                        const fish = state.fishLog.find(f => f.id === state.currentFishId);
+                        if (fish) {
+                            fish.photos = fish.photos || [];
+                            fish.photos.push({ filename, data, timestamp: video.currentTime });
+                            state.screenshots.push({ filename, data, timestamp: video.currentTime });
+                            renderFish(); notify('Photo added!'); saveSession();
+                        }
+                    }
+                };
+                reader.readAsDataURL(file);
+                photoInput.value = '';
+            };
+
             setInterval(saveSession, 30000);
         }
 
@@ -375,7 +449,14 @@
 
         function populateSpecies() {
             const ss = document.getElementById('speciesSlideshow');
-            ss.innerHTML = speciesData.map((s,i) => `<div class="species-item" data-idx="${i}"><strong>${s.name}</strong><br><small style="color:#7f8c8d">${s.scientific}</small></div>`).join('');
+            ss.innerHTML = speciesData.map((s,i) => `
+                <div class="species-item" data-idx="${i}">
+                    ${ s.photo ? `<img src="${s.photo}" alt="${s.name}">` : `<div style="width:48px;height:48px;background:#f8f9fa;border-radius:6px;border:1px solid #e1e8ed"></div>` }
+                    <div>
+                      <strong>${s.name}</strong><br><small style="color:#7f8c8d">${s.scientific}</small>
+                    </div>
+                </div>
+            `).join('');
             ss.querySelectorAll('.species-item').forEach(el => {
                 el.onclick = function() {
                     ss.querySelectorAll('.species-item').forEach(e => e.classList.remove('selected'));
@@ -388,27 +469,42 @@
         function filterSpecies() {
             const term = document.getElementById('speciesSearch').value.toLowerCase();
             document.querySelectorAll('.species-item').forEach(el => {
-                el.style.display = el.textContent.toLowerCase().includes(term) ? 'block' : 'none';
+                el.style.display = el.textContent.toLowerCase().includes(term) ? 'flex' : 'none';
             });
         }
 
         function addFish() {
             const manual = document.getElementById('manualSpeciesName').value.trim();
-            const name = state.selectedSpecies?.name || manual;
+            const initialCount = parseInt(document.getElementById('initialCount').value) || 1;
+            const name = (state.selectedSpecies && state.selectedSpecies.name) || manual;
             if (!name) { notify('Select or enter species', 'error'); return; }
-            const fish = { id: Date.now(), species: name, count: 1, maxN: 1, bites: 0, firstSeen: video.currentTime, events: [] };
+            const fish = { id: Date.now(), species: name, count: initialCount, maxN: initialCount, bites: 0, firstSeen: video.currentTime, events: [], photos: [] };
             state.fishLog.push(fish);
-            const evt = { timestamp: video.currentTime, frame: Math.floor(video.currentTime*30), species: name, type: 'first_sighting', countAdded: 1, cumulative: 1, maxN: 1, bite: '', screenshot: '', notes: '' };
+            const evt = { timestamp: video.currentTime, frame: Math.floor(video.currentTime*30), species: name, type: 'first_sighting', countAdded: initialCount, cumulative: fish.count, maxN: fish.maxN, bite: '', screenshot: '', notes: '' };
             if (document.getElementById('takeScreenshotOnAdd').checked) evt.screenshot = takeScreenshot();
             state.events.push(evt);
             fish.events.push(evt);
             renderFish();
             closeModal('newFishModal');
+            // Reset selection
             state.selectedSpecies = null;
             document.getElementById('manualSpeciesName').value = '';
             document.getElementById('speciesSearch').value = '';
             document.querySelectorAll('.species-item').forEach(e => e.classList.remove('selected'));
-            notify(`Added ${name}!`);
+
+            // If species has no global photo, prompt user to take a cropped screenshot to assign
+            const sd = speciesData.find(s => s.name === name);
+            if (sd && !sd.photo) {
+                // set assigning flags for this new fish
+                state.assigningSpeciesPhoto = true;
+                state.assignSpeciesFishId = fish.id;
+                notify('Species has no photo — please take a screenshot and crop it to assign as the species photo.', 'warning');
+                // open crop overlay to guide user
+                startCrop();
+            } else {
+                notify(`Added ${name}!`);
+            }
+
             if (document.getElementById('autoAdvance').checked) video.currentTime += 1/30;
             saveSession();
         }
@@ -418,31 +514,45 @@
             if (!state.fishLog.length) { list.innerHTML = '<p style="text-align:center;color:#95a5a6;padding:20px">No fish logged yet</p>'; return; }
             list.innerHTML = state.fishLog.map(f => `
                 <div class="fish-card">
-                    <div class="fish-card-header"><span class="fish-name">${f.species}</span><span class="maxn-badge">MaxN: ${f.maxN}</span></div>
-                    <div class="fish-stats">
-                        <div class="stat"><span class="stat-label">Count</span><span class="stat-value">${f.count}</span></div>
-                        <div class="stat"><span class="stat-label">Bites</span><span class="stat-value">${f.bites}</span></div>
-                        <div class="stat"><span class="stat-label">First</span><span class="stat-value" style="font-size:14px">${formatTime(f.firstSeen)}</span></div>
-                    </div>
-                    <div class="fish-actions">
-                        <button class="secondary" onclick="logBite(${f.id})">🦷 Bite</button>
-                        <button class="success" onclick="logCount(${f.id})">➕ New</button>
-                        <button class="danger" onclick="removeFish(${f.id})">🗑️</button>
+                    ${ f.photo ? `<img src="${f.photo}" alt="${f.species}">` : `<div style="width:64px;height:64px;background:#f8f9fa;border-radius:6px;border:1px solid #e1e8ed"></div>` }
+                    <div class="fish-info">
+                      <div class="fish-card-header"><span class="fish-name">${f.species}</span><span class="maxn-badge">MaxN: ${f.maxN}</span></div>
+                      <div class="fish-stats">
+                          <div class="stat"><span class="stat-label">Count</span><span class="stat-value">${f.count}</span></div>
+                          <div class="stat"><span class="stat-label">Bites</span><span class="stat-value">${f.bites}</span></div>
+                          <div class="stat"><span class="stat-label">First</span><span class="stat-value" style="font-size:14px">${formatTime(f.firstSeen)}</span></div>
+                      </div>
+                      <div class="fish-actions">
+                          <button class="secondary" onclick="logBite(${f.id})">🦷 Bite</button>
+                          <button class="success" onclick="logCount(${f.id})">➕ New</button>
+                          <button class="secondary" onclick="redoSpeciesPhoto(${f.id})">🔄 Redo Picture</button>
+                          <button class="danger" onclick="removeFish(${f.id})">🗑️</button>
+                      </div>
                     </div>
                 </div>
             `).join('');
         }
 
+        // Starts a redo workflow: user will crop to assign species photo
+        function redoSpeciesPhoto(id) {
+            const fish = state.fishLog.find(f => f.id === id);
+            if (!fish) return;
+            state.assigningSpeciesPhoto = true;
+            state.assignSpeciesFishId = id;
+            notify('Redo species photo: take a screenshot and crop the area.');
+            startCrop();
+        }
+
         function logBite(id) { state.currentFishId = id; openModal('biteModal'); }
         function saveBite() {
             const fish = state.fishLog.find(f => f.id === state.currentFishId);
-            const target = document.getElementById('biteTarget').value.trim();
-            if (!target) { notify('Enter bite target', 'error'); return; }
+            const target = document.getElementById('biteTarget').value;
+            if (!target) { notify('Select a substrate', 'error'); return; }
             fish.bites++;
             const evt = { timestamp: video.currentTime, frame: Math.floor(video.currentTime*30), species: fish.species, type: 'bite', countAdded: 0, cumulative: fish.count, maxN: fish.maxN, bite: target, screenshot: '', notes: '' };
             state.events.push(evt); fish.events.push(evt);
             renderFish(); closeModal('biteModal');
-            document.getElementById('biteTarget').value = '';
+            document.getElementById('biteTarget').value = 'algae';
             notify(`Bite logged!`);
             if (document.getElementById('autoAdvance').checked) video.currentTime += 1/30;
             saveSession();
@@ -453,18 +563,17 @@
         function saveCount() {
             const fish = state.fishLog.find(f => f.id === state.currentFishId);
             const add = parseInt(document.getElementById('additionalCount').value);
-        
+
             if (add < 1) {
                 notify('Count must be >= 1', 'error');
                 return;
             }
-        
+
             fish.count += add;
-        
-            // FIX: maxN should track the largest single observation (add), not cumulative
-            const newMax = add > fish.maxN;
-            if (newMax) fish.maxN = add;
-        
+
+            // MaxN should track the largest single observation (count seen at once)
+            if (add > fish.maxN) fish.maxN = add;
+
             const evt = {
                 timestamp: video.currentTime,
                 frame: Math.floor(video.currentTime * 30),
@@ -477,22 +586,22 @@
                 screenshot: '',
                 notes: ''
             };
-        
+
             state.events.push(evt);
             fish.events.push(evt);
-        
+
             renderFish();
             closeModal('countModal');
             notify(`Added ${add} ${fish.species}!`);
-        
-            if (newMax) {
+
+            if (add > fish.maxN) {
                 document.getElementById('maxnSpeciesName').textContent = fish.species;
                 document.getElementById('maxnValue').textContent = fish.maxN;
                 openModal('maxnModal');
             } else if (document.getElementById('autoAdvance').checked) {
                 video.currentTime += 1 / 30;
             }
-        
+
             saveSession();
         }
         function captureMaxN() {
@@ -535,53 +644,4 @@
             csv += `"${m.location}","${m.date}","${m.time}","${m.transect}","${m.reviewer}","${m.videoFilename}"\n\n`;
             csv += 'Timestamp,FrameNumber,Species,EventType,CountAdded,CumulativeCount,CurrentMaxN,BiteTarget,ScreenshotFile,Notes\n';
             state.events.forEach(e => {
-                csv += `"${formatTime(e.timestamp)}",${e.frame},"${e.species}","${e.type}",${e.countAdded},${e.cumulative},${e.maxN},"${e.bite}","${e.screenshot}","${e.notes}"\n`;
-            });
-            const zip = new JSZip();
-            zip.file('herbivory-data.csv', csv);
-            const folder = zip.folder('screenshots');
-            state.screenshots.forEach(s => folder.file(s.filename, s.data.split(',')[1], { base64: true }));
-            const blob = await zip.generateAsync({ type: 'blob' });
-            download(blob, 'herbivory-export.zip', 'application/zip');
-            notify('ZIP exported!');
-        }
-
-        function download(content, name, type) {
-            const blob = content instanceof Blob ? content : new Blob([content], { type });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = name;
-            a.click();
-        }
-
-        function openModal(id) { document.getElementById(id).classList.add('active'); }
-        function closeModal(id) { document.getElementById(id).classList.remove('active'); }
-
-        function notify(msg, type = 'success') {
-            const n = document.getElementById('notification');
-            n.textContent = msg;
-            n.className = 'notification active' + (type !== 'success' ? ' ' + type : '');
-            setTimeout(() => n.classList.remove('active'), 3000);
-        }
-
-        function saveSession() {
-            const data = { meta: getMeta(), fishLog: state.fishLog, events: state.events, screenshots: state.screenshots };
-            localStorage.setItem('herbivoryTracker', JSON.stringify(data));
-        }
-
-        function loadSession() {
-            const saved = localStorage.getItem('herbivoryTracker');
-            if (saved) {
-                try {
-                    const data = JSON.parse(saved);
-                    if (data.meta) Object.keys(data.meta).forEach(k => { const el = document.getElementById(k); if (el) el.value = data.meta[k]; });
-                    if (data.fishLog) state.fishLog = data.fishLog;
-                    if (data.events) state.events = data.events;
-                    if (data.screenshots) state.screenshots = data.screenshots;
-                    renderFish();
-                } catch (e) { console.error(e); }
-            }
-        }
-    </script>
-</body>
-</html>
+                csv += `"${formatTime(e.timestamp)}",${e.frame},"${e.species}","${e.type}",${e.countAdded},${e.cumulative},${e.maxN},"${e.bite}","${e.screenshot}","${e.notes}"
